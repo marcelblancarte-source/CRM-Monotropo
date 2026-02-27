@@ -1,7 +1,6 @@
-    import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 
-// ─── Stat Card Component (Estilo Monotropo) ──────────────────────────────────
 function StatCard({
     title, value, subtitle,
 }: { title: string; value: string | number; subtitle?: string }) {
@@ -14,10 +13,8 @@ function StatCard({
     )
 }
 
-// ─── Temperature Bar Component (Acentos Púrpura y Blanco) ─────────────────────
 function TempBar({ label, emoji, count, total, colorClass }: { label: string; emoji: string; count: number; total: number; colorClass: string }) {
     const pct = total > 0 ? Math.round((count / total) * 100) : 0
-    // Mapeo de colores originales a la nueva paleta minimalista
     const monotropoColor = colorClass.includes('blue') ? 'bg-purple-600' : 
                           colorClass.includes('green') ? 'bg-white' : 
                           colorClass.includes('gray') ? 'bg-zinc-800' : 'bg-zinc-500';
@@ -29,14 +26,13 @@ function TempBar({ label, emoji, count, total, colorClass }: { label: string; em
                 <span>{label}</span>
             </div>
             <div className="flex-1 h-[2px] bg-white/5 overflow-hidden">
-                <div className={`h-full ${monotropoColor} transition-all duration-1000`} style={{ width: `${pct}%` }} />
+                <div className="h-full bg-white transition-all duration-1000" style={{ width: `${pct}%`, backgroundColor: monotropoColor === 'bg-purple-600' ? '#9333ea' : monotropoColor === 'bg-white' ? '#ffffff' : '#3f3f46' }} />
             </div>
             <span className="w-12 text-right text-[11px] font-mono text-white/50">{count}</span>
         </div>
     )
 }
 
-// ─── Funnel Step Component ────────────────────────────────────────────────────
 function FunnelStep({ step, label, count, pct, last }: { step: number; label: string; count: number; pct: number; last?: boolean }) {
     return (
         <div className="flex items-center gap-6">
@@ -57,7 +53,6 @@ function FunnelStep({ step, label, count, pct, last }: { step: number; label: st
     )
 }
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
 export default async function DashboardHomePage() {
     const supabase = await createClient()
 
@@ -73,21 +68,13 @@ export default async function DashboardHomePage() {
     const avgDiscount = 4.7 
     const todayActivities = { total: 14, overdue: 3, done: 7, pending: 4 }
 
-    const teamSummary = [
-        { name: 'Equipo Oro', prospects: 62, advisors: 4, hotLeads: 12 },
-        { name: 'Equipo Plata', prospects: 41, advisors: 3, hotLeads: 7 },
-        { name: 'Equipo Norte', prospects: 38, advisors: 4, hotLeads: 13 },
-    ]
-
     return (
         <div className="space-y-12 bg-black text-white min-h-screen pb-20">
-            {/* Header */}
             <div className="border-b border-white/10 pb-8">
                 <h1 className="text-4xl font-extralight tracking-tighter uppercase">MTP Dashboard</h1>
                 <p className="text-[10px] uppercase tracking-[0.3em] text-white/40 mt-2">Inteligencia Estratégica Inmobiliaria</p>
             </div>
 
-            {/* ── KPIs Row ───────────────────────────────────────────────────── */}
             <div className="grid grid-cols-2 gap-px bg-white/10 border border-white/10 lg:grid-cols-4">
                 <StatCard title="Total Prospectos" value={totals.prospects} subtitle="Base de datos activa" />
                 <StatCard title="Visitas" value={totals.visited} subtitle="Conversión presencial" />
@@ -95,10 +82,44 @@ export default async function DashboardHomePage() {
                 <StatCard title="Cierres" value={totals.closedImminent} subtitle="Etapa final" />
             </div>
 
-            {/* ── Main Grid ──────────────────────────────────────────────────── */}
             <div className="grid gap-12 lg:grid-cols-3">
-
-                {/* Semáforo de Temperatura */}
                 <div className="lg:col-span-2 border border-white/10 bg-zinc-950 p-8">
                     <h2 className="text-[11px] font-bold uppercase tracking-[0.2em] mb-10 text-white/50 border-b border-white/5 pb-4">Distribución de Temperatura</h2>
                     <div className="space-y-8">
+                        {tempData.map((t) => (
+                            <TempBar key={t.label} {...t} total={totals.prospects} />
+                        ))}
+                    </div>
+                </div>
+
+                <div className="space-y-6">
+                    <div className="border border-white/10 bg-zinc-950 p-8">
+                        <h2 className="text-[11px] font-bold uppercase tracking-[0.2em] mb-6 text-white/50">Actividades</h2>
+                        <div className="flex justify-between items-end">
+                            <p className="text-5xl font-light">{todayActivities.total}</p>
+                            <div className="text-right space-y-1">
+                                <p className="text-[9px] uppercase tracking-widest text-white/40">{todayActivities.done} Completadas</p>
+                                <p className="text-[9px] uppercase tracking-widest text-purple-400">{todayActivities.overdue} Vencidas</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-purple-600 p-8">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/70">Descuento Promedio</p>
+                        <p className="text-4xl font-light text-white mt-2">{avgDiscount}%</p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="border border-white/10 bg-zinc-950 p-8">
+                <h2 className="text-[11px] font-bold uppercase tracking-[0.2em] mb-10 text-white/50">Embudo de Conversión</h2>
+                <div className="space-y-10 max-w-3xl">
+                    <FunnelStep step={1} label="Registros" count={141} pct={100} />
+                    <FunnelStep step={2} label="Visitas" count={58} pct={41} />
+                    <FunnelStep step={3} label="Cotizaciones" count={32} pct={23} />
+                    <FunnelStep step={4} label="Cierre" count={9} pct={6} last />
+                </div>
+            </div>
+        </div>
+    )
+}
