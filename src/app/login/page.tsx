@@ -1,9 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 
-import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
-
 export default async function LoginPage({
     searchParams,
 }: {
@@ -15,7 +12,6 @@ export default async function LoginPage({
         'use server'
         const email = formData.get('email') as string
         const password = formData.get('password') as string
-        const { createClient } = await import('@/lib/supabase/server')
         const supabase = await createClient()
         const { error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) return redirect('/login?message=' + encodeURIComponent(error.message))
