@@ -33,8 +33,8 @@ export default async function LoginPage({
                     <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 text-white text-2xl font-bold shadow-lg shadow-blue-600/30">
                         C
                     </div>
-                    <h1 className="text-2xl font-bold text-white">CRM Inmobiliario</h1>
-                    <p className="mt-1 text-sm text-blue-300/80">Sistema de gestión de ventas</p>
+                    <h1 className="text-2xl font-bold text-white">CRM Monotropo</h1>
+                    <p className="mt-1 text-sm text-blue-300/80">Gestión Estratégica</p>
                 </div>
 
                 {/* Card */}
