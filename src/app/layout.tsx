@@ -5,8 +5,8 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-    title: 'CRM Inmobiliario | Gestión de Ventas',
-    description: 'Sistema de gestión de prospectos de ventas y seguimiento inmobiliario.',
+    title: 'MONOTROPO | CRM',
+    description: 'Sistema de gestión de prospectos y seguimiento estratégico.',
 };
 
 export default function RootLayout({
