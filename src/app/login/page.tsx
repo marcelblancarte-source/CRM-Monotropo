@@ -23,9 +23,13 @@ export default async function LoginPage({
             <div className="relative w-full max-w-sm">
                 {/* Logo / Brand */}
                 <div className="mb-12 text-center">
-                    <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center border border-white/20 bg-white/5 text-white text-3xl font-light tracking-tighter">
-                        M
-                    </div>
+                    <div className="mx-auto mb-8 flex justify-center">
+    <img 
+        src="/MTP_IGP-02_Negativo.png" 
+        alt="Logo Monotropo" 
+        className="h-20 w-auto object-contain" 
+    />
+</div>
                     <h1 className="text-2xl font-light tracking-[0.2em] text-white uppercase">Monotropo</h1>
                     <p className="mt-2 text-[10px] uppercase tracking-[0.3em] text-white/40">Gestión Estratégica</p>
                 </div>
