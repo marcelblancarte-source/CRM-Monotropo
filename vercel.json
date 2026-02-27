@@ -5,8 +5,8 @@
     "framework": "nextjs",
     "installCommand": "npm install",
     "env": {
-        "NEXT_PUBLIC_SUPABASE_URL": "@supabase_url",
-        "NEXT_PUBLIC_SUPABASE_ANON_KEY": "@supabase_anon_key",
+        "NEXT_PUBLIC_SUPABASE_URL": "https://uwxissriiieudhhlaidh.supabase.co",
+        "NEXT_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable__17tXYzSQOwsf6Q6X2j0EA_KD51rEV_",
         "INVENTORY_SOURCE": "supabase"
     }
 }
