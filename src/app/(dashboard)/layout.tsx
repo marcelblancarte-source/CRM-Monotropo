@@ -37,7 +37,7 @@ export default async function DashboardLayout({
                 {/* Logo */}
                 <div className="flex h-16 shrink-0 items-center gap-2 border-b border-gray-200 px-6 dark:border-gray-800">
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white text-sm font-bold">C</div>
-                    <span className="text-lg font-bold text-gray-900 dark:text-white">CRM Inmobiliario</span>
+                    <span className="text-lg font-bold text-gray-900 dark:text-white">CRM Monotropo</span>
                 </div>
 
                 {/* User Card */}
