@@ -11,7 +11,7 @@ type Prospect = {
   email: string | null
   temperature: string | null
   created_at: string
-  users: { full_name: string | null } | null
+  users: { full_name: string | null } | { full_name: string | null }[] | null
 }
 
 const TEMP_BADGE: Record<string, { label: string; className: string }> = {
