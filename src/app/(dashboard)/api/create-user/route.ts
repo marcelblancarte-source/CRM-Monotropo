@@ -4,14 +4,20 @@ import { NextResponse } from 'next/server'
 export async function POST(request: Request) {
   const { email, password, fullName, roleId, teamId } = await request.json()
 
-  // Cliente con service role key para crear usuarios
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-  // Crear usuario en Auth
+  // Verificar que las variables existen
+  if (!supabaseUrl || !serviceKey) {
+    return NextResponse.json({ 
+      error: `Variables faltantes: URL=${!!supabaseUrl}, KEY=${!!serviceKey}` 
+    }, { status: 400 })
+  }
+
+  const supabase = createClient(supabaseUrl, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false }
+  })
+
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email,
     password,
@@ -22,7 +28,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: authError?.message }, { status: 400 })
   }
 
-  // Crear perfil en tabla users
   const { error: profileError } = await supabase.from('users').insert({
     id: authData.user.id,
     full_name: fullName,
