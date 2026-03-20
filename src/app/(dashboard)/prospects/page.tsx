@@ -1,4 +1,4 @@
-'use client'
+ 'use client'
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
@@ -14,6 +14,7 @@ type Prospect = {
   preferred_typology: string | null
   notes: string | null
   assigned_to: string | null
+  team_id: string | null
 }
 
 const TEMP_BADGE: Record<string, { label: string; dot: string; text: string }> = {
@@ -26,7 +27,8 @@ const TEMP_BADGE: Record<string, { label: string; dot: string; text: string }> =
 
 export default function ProspectsPage() {
   const [prospects, setProspects] = useState<Prospect[]>([])
-  const [users, setUsers] = useState<{id: string, email: string}[]>([])
+  const [teams, setTeams] = useState<{id: string, name: string}[]>([])
+  const [advisors, setAdvisors] = useState<{id: string, full_name: string, team_id: string | null}[]>([])
   const [selectedProspect, setSelectedProspect] = useState<Prospect | null>(null)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -37,14 +39,19 @@ export default function ProspectsPage() {
 
   async function loadInitialData() {
     setLoading(true)
+    
     // 1. Cargar Prospectos
     const { data: pData } = await supabase.from('prospects').select('*').order('created_at', { ascending: false })
+    
+    // 2. Cargar Equipos
+    const { data: tData } = await supabase.from('teams').select('id, name')
+    
+    // 3. Cargar Perfiles (Asesores)
+    const { data: uData } = await supabase.from('profiles').select('id, full_name, team_id')
+    
     setProspects((pData as any) ?? [])
-    
-    // 2. Cargar Asesores (Usuarios) - Ajusta según tu tabla de perfiles si tienes una
-    const { data: uData } = await supabase.from('profiles').select('id, full_name').limit(50)
-    setUsers((uData as any) ?? [])
-    
+    setTeams((tData as any) ?? [])
+    setAdvisors((uData as any) ?? [])
     setLoading(false)
   }
 
@@ -84,7 +91,7 @@ export default function ProspectsPage() {
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-white/10 bg-white/[0.02] text-[9px] uppercase tracking-[0.2em] text-white/30 font-bold italic">
-              <th className="px-6 py-4">Asesor</th>
+              <th className="px-6 py-4">Asignación Manual</th>
               <th className="px-6 py-4">Cliente (Click p/ Detalle)</th>
               <th className="px-6 py-4">Estatus</th>
               <th className="px-6 py-4">Últ. Gestión</th>
@@ -96,15 +103,27 @@ export default function ProspectsPage() {
               const temp = TEMP_BADGE[p.temperature ?? ''] ?? { label: '—', dot: 'bg-zinc-800', text: 'text-zinc-500' }
               return (
                 <tr key={p.id} className="group hover:bg-white/[0.01]">
-                  {/* Selector de Asesor */}
-                  <td className="px-6 py-5">
+                  {/* Selector Dual: Equipo y Asesor */}
+                  <td className="px-6 py-5 min-w-[200px] space-y-1">
+                    <select 
+                      value={p.team_id || ''} 
+                      onChange={(e) => updateProspect(p.id, { team_id: e.target.value, assigned_to: null })}
+                      className="block w-full bg-transparent text-[9px] uppercase text-white/30 outline-none border-none focus:text-white"
+                    >
+                      <option value="">Seleccionar Equipo...</option>
+                      {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+
                     <select 
                       value={p.assigned_to || ''} 
                       onChange={(e) => updateProspect(p.id, { assigned_to: e.target.value })}
-                      className="bg-transparent text-[10px] uppercase text-purple-400 outline-none border-none cursor-pointer"
+                      className="block w-full bg-transparent text-[10px] uppercase text-purple-400 font-bold outline-none border-none cursor-pointer"
                     >
-                      <option value="">Sin Asignar</option>
-                      {users.map(u => <option key={u.id} value={u.id}>{u.email}</option>)}
+                      <option value="">Asignar Asesor...</option>
+                      {advisors
+                        .filter(a => !p.team_id || a.team_id === p.team_id)
+                        .map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)
+                      }
                     </select>
                   </td>
 
@@ -132,6 +151,7 @@ export default function ProspectsPage() {
                         value={tempNote} 
                         onChange={e => setTempNote(e.target.value)} 
                         onBlur={() => { updateProspect(p.id, { notes: tempNote, last_contact_date: new Date().toISOString() }); setEditingId(null); }}
+                        onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
                         className="bg-zinc-900 border border-purple-500 px-2 py-1 text-[10px] text-white w-full outline-none" 
                       />
                     ) : (
