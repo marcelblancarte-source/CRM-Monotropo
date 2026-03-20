@@ -43,7 +43,7 @@ export default function ProspectsPage() {
     setLoading(true)
     const { data } = await supabase
       .from('prospects')
-      .select('id, full_name, phone, email, temperature, created_at, users(full_name)')
+      .select('id, full_name, phone, email, temperature, created_at')
       .order('created_at', { ascending: false })
     setProspects((data as any) ?? [])
     setFiltered((data as any) ?? [])
