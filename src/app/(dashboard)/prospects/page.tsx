@@ -15,6 +15,7 @@ type Prospect = {
   notes: string | null
   assigned_to: string | null
   team_id: string | null
+  created_at: string
 }
 
 const TEMP_BADGE: Record<string, { label: string; dot: string; text: string }> = {
@@ -39,17 +40,8 @@ export default function ProspectsPage() {
 
   async function loadInitialData() {
     setLoading(true)
-    
-    // 1. Cargar Prospectos ordenados por creación (Orden Estable)
-    const { data: pData } = await supabase
-      .from('prospects')
-      .select('*')
-      .order('created_at', { ascending: false })
-    
-    // 2. Cargar Equipos
+    const { data: pData } = await supabase.from('prospects').select('*').order('created_at', { ascending: false })
     const { data: tData } = await supabase.from('teams').select('id, name')
-    
-    // 3. Cargar Perfiles (Asesores)
     const { data: uData } = await supabase.from('profiles').select('id, full_name, team_id')
     
     setProspects((pData as any) ?? [])
@@ -60,26 +52,23 @@ export default function ProspectsPage() {
 
   useEffect(() => { loadInitialData() }, [])
 
-  // FUNCIÓN CORREGIDA: Actualización Optimista (Evita saltos en la lista)
+  // ACTUALIZACIÓN CORREGIDA: Mantiene la fila en su lugar exacto
   async function updateProspect(id: string, updates: Partial<Prospect>) {
-    // 1. Cambiamos el estado local inmediatamente para que la UI no se mueva
-    setProspects(prev => prev.map(p => 
-      p.id === id ? { ...p, ...updates } : p
-    ));
+    // Actualización local inmediata (Optimista)
+    setProspects(currentProspects => {
+      return currentProspects.map(p => (p.id === id ? { ...p, ...updates } : p));
+    });
 
-    // 2. Actualizamos Supabase en segundo plano
     const { error } = await supabase
       .from('prospects')
       .update(updates)
       .eq('id', id);
 
     if (error) {
-      console.error("Error al actualizar:", error);
-      loadInitialData(); // Solo recargamos si hubo un error real
-      alert("Error al sincronizar con el servidor.");
+      console.error("Error:", error);
+      loadInitialData(); // Solo recarga si falla
     }
-    
-    // NO llamamos a loadInitialData() si todo sale bien para mantener la posición del renglón.
+    // IMPORTANTE: No llamamos a loadInitialData() para que el array no se re-ordene por 'updated_at'
   }
 
   const formatDate = (dateStr: string | null) => {
@@ -88,167 +77,131 @@ export default function ProspectsPage() {
   }
 
   return (
-    <div className="relative min-h-screen bg-black text-white p-8 font-sans">
-      {/* Header */}
+    <div className="relative min-h-screen bg-black text-white p-8">
       <div className="flex justify-between items-end border-b border-white/10 pb-8 mb-8">
         <div>
-          <h1 className="text-4xl font-extralight tracking-tighter uppercase italic">Control Comercial</h1>
-          <p className="text-[10px] uppercase tracking-[0.3em] text-white/40 mt-2 font-bold italic">Boralba Living</p>
+          <h1 className="text-4xl font-extralight tracking-tighter uppercase italic text-white">Directorio de Prospectos</h1>
+          <p className="text-[10px] uppercase tracking-[0.3em] text-white/40 mt-2 font-bold italic">Boralba Living x Blancarte Arquitectura</p>
         </div>
       </div>
 
-      {/* Buscador */}
       <input 
         type="text" 
         value={search} 
         onChange={e => setSearch(e.target.value)} 
-        placeholder="BUSCAR POR NOMBRE..." 
+        placeholder="FILTRAR POR NOMBRE..." 
         className="h-12 w-full bg-zinc-950 border border-white/10 px-4 text-[11px] uppercase tracking-widest mb-8 outline-none focus:border-purple-500 transition-all" 
       />
 
-      {/* Tabla de Gestión */}
       <div className="border border-white/10 bg-zinc-950 overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>
-            <tr className="border-b border-white/10 bg-white/[0.02] text-[9px] uppercase tracking-[0.2em] text-white/30 font-bold italic text-nowrap">
-              <th className="px-6 py-4">Asignación (Equipo / Asesor)</th>
-              <th className="px-6 py-4">Cliente (Detalles)</th>
+            <tr className="border-b border-white/10 bg-white/[0.02] text-[9px] uppercase tracking-[0.2em] text-white/30 font-bold italic">
+              <th className="px-6 py-4">Equipo</th>
+              <th className="px-6 py-4">Asesor Asignado</th>
+              <th className="px-6 py-4">Cliente</th>
               <th className="px-6 py-4">Estatus</th>
-              <th className="px-6 py-4">Últ. Gestión</th>
-              <th className="px-6 py-4">Notas de Seguimiento</th>
+              <th className="px-6 py-4">Seguimiento</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {prospects.filter(p => p.full_name.toLowerCase().includes(search.toLowerCase())).map((p) => {
-              const temp = TEMP_BADGE[p.temperature ?? ''] ?? { label: '—', dot: 'bg-zinc-800', text: 'text-zinc-500' }
-              return (
-                <tr key={p.id} className="group hover:bg-white/[0.01] transition-colors">
-                  {/* SELECTORES DE ASIGNACIÓN */}
-                  <td className="px-6 py-5 min-w-[220px] space-y-1">
-                    <select 
-                      value={p.team_id || ''} 
-                      onChange={(e) => updateProspect(p.id, { team_id: e.target.value, assigned_to: null })}
-                      className="block w-full bg-transparent text-[9px] uppercase text-white/30 outline-none border-none focus:text-white transition-colors cursor-pointer"
-                    >
-                      <option value="">Seleccionar Equipo...</option>
-                      {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
+            {prospects
+              .filter(p => p.full_name.toLowerCase().includes(search.toLowerCase()))
+              .map((p) => {
+                const temp = TEMP_BADGE[p.temperature ?? ''] ?? { label: '—', dot: 'bg-zinc-800', text: 'text-zinc-500' }
+                
+                return (
+                  <tr key={p.id} className="group hover:bg-white/[0.01]">
+                    {/* SELECTOR DE EQUIPO (Independiente) */}
+                    <td className="px-6 py-5">
+                      <select 
+                        value={p.team_id || ''} 
+                        onChange={(e) => updateProspect(p.id, { team_id: e.target.value })}
+                        className="bg-transparent text-[10px] uppercase text-white/40 outline-none border-none focus:text-white cursor-pointer"
+                      >
+                        <option value="">Sin Equipo</option>
+                        {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </select>
+                    </td>
 
-                    <select 
-                      value={p.assigned_to || ''} 
-                      onChange={(e) => updateProspect(p.id, { assigned_to: e.target.value })}
-                      className="block w-full bg-transparent text-[10px] uppercase text-purple-400 font-bold outline-none border-none cursor-pointer"
-                    >
-                      <option value="">Asignar Asesor...</option>
-                      {advisors
-                        .filter(a => !p.team_id || a.team_id === p.team_id)
-                        .map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)
-                      }
-                    </select>
-                  </td>
+                    {/* SELECTOR DE ASESOR (Independiente pero resaltado) */}
+                    <td className="px-6 py-5">
+                      <select 
+                        value={p.assigned_to || ''} 
+                        onChange={(e) => updateProspect(p.id, { assigned_to: e.target.value })}
+                        className="bg-transparent text-[11px] uppercase text-purple-400 font-bold outline-none border-none cursor-pointer"
+                      >
+                        <option value="">Seleccionar Asesor...</option>
+                        {advisors.map(u => (
+                          <option key={u.id} value={u.id} className={u.team_id === p.team_id ? "font-bold text-white" : "text-zinc-600"}>
+                            {u.full_name} {u.team_id === p.team_id ? "✓" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
 
-                  {/* NOMBRE Y ACCESO A FICHA */}
-                  <td className="px-6 py-5 cursor-pointer" onClick={() => setSelectedProspect(p)}>
-                    <p className="text-xs uppercase tracking-wider font-light text-white group-hover:text-purple-400 transition-colors underline decoration-white/10 underline-offset-4">
-                      {p.full_name}
-                    </p>
-                    <p className="text-[8px] text-white/20 mt-1 uppercase italic tracking-tighter">{p.preferred_typology || 'Sin Unidad'}</p>
-                  </td>
-
-                  {/* ESTATUS DE TEMPERATURA */}
-                  <td className="px-6 py-5">
-                    <div className="flex items-center gap-2">
-                      <span className={`h-1.5 w-1.5 rounded-full ${temp.dot}`} />
-                      <span className={`text-[9px] uppercase font-bold ${temp.text}`}>{temp.label}</span>
-                    </div>
-                  </td>
-
-                  {/* ÚLTIMA GESTIÓN */}
-                  <td className="px-6 py-5 text-[10px] font-mono text-white/40 italic">
-                    {formatDate(p.last_contact_date)}
-                  </td>
-
-                  {/* NOTAS CON EDICIÓN RÁPIDA */}
-                  <td className="px-6 py-5 max-w-xs">
-                    {editingId === p.id ? (
-                      <input 
-                        autoFocus 
-                        value={tempNote} 
-                        onChange={e => setTempNote(e.target.value)} 
-                        onBlur={() => { 
-                          if (tempNote !== p.notes) {
-                            updateProspect(p.id, { notes: tempNote, last_contact_date: new Date().toISOString() }); 
-                          }
-                          setEditingId(null); 
-                        }}
-                        onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                        className="bg-zinc-900 border border-purple-500/50 px-2 py-1 text-[10px] text-white w-full outline-none" 
-                      />
-                    ) : (
-                      <p onClick={() => { setEditingId(p.id); setTempNote(p.notes || '') }} className="text-[10px] text-white/30 italic cursor-pointer truncate hover:text-white transition-all">
-                        {p.notes || "Hacer seguimiento..."}
+                    <td className="px-6 py-5 cursor-pointer" onClick={() => setSelectedProspect(p)}>
+                      <p className="text-xs uppercase tracking-wider text-white group-hover:text-purple-400 transition-colors">
+                        {p.full_name}
                       </p>
-                    )}
-                  </td>
-                </tr>
-              )
+                    </td>
+
+                    <td className="px-6 py-5">
+                      <div className="flex items-center gap-2">
+                        <span className={`h-1 w-1 rounded-full ${temp.dot}`} />
+                        <span className={`text-[9px] uppercase font-bold ${temp.text}`}>{temp.label}</span>
+                      </div>
+                    </td>
+
+                    <td className="px-6 py-5 max-w-xs">
+                      {editingId === p.id ? (
+                        <input 
+                          autoFocus 
+                          value={tempNote} 
+                          onChange={e => setTempNote(e.target.value)} 
+                          onBlur={() => {
+                            updateProspect(p.id, { notes: tempNote, last_contact_date: new Date().toISOString() });
+                            setEditingId(null);
+                          }}
+                          onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                          className="bg-zinc-900 border border-purple-500 px-2 py-1 text-[10px] text-white w-full outline-none" 
+                        />
+                      ) : (
+                        <p onClick={() => { setEditingId(p.id); setTempNote(p.notes || '') }} className="text-[10px] text-white/30 italic cursor-pointer truncate hover:text-white transition-colors">
+                          {p.notes || "Click para añadir nota..."}
+                        </p>
+                      )}
+                    </td>
+                  </tr>
+                )
             })}
           </tbody>
         </table>
       </div>
 
-      {/* MODAL: FICHA TÉCNICA LATERAL */}
+      {/* MODAL LATERAL - FICHA */}
       {selectedProspect && (
         <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setSelectedProspect(null)} />
-          <div className="relative w-full max-w-md bg-zinc-950 border-l border-white/10 h-full p-10 shadow-2xl overflow-y-auto animate-in slide-in-from-right duration-500">
-            <button onClick={() => setSelectedProspect(null)} className="absolute top-6 right-6 text-white/20 hover:text-white text-[10px] uppercase tracking-widest border border-white/10 px-3 py-1 hover:bg-white hover:text-black transition-all font-bold">Cerrar ✕</button>
-            
-            <div className="space-y-10 mt-12">
-              <header className="border-b border-white/5 pb-6">
-                <span className="text-[8px] uppercase tracking-[0.4em] text-purple-500 font-bold italic">Expediente Prospecto</span>
-                <h2 className="text-4xl font-extralight tracking-tighter uppercase italic text-white mt-2 leading-none">{selectedProspect.full_name}</h2>
-              </header>
-
-              <section className="space-y-8">
-                <div>
-                  <label className="text-[9px] text-white/20 uppercase tracking-[0.2em] block mb-3 font-bold">Canales de Comunicación</label>
-                  <div className="bg-white/[0.02] border border-white/5 p-5 space-y-4">
-                    <div>
-                      <p className="text-[8px] text-white/30 uppercase tracking-widest">WhatsApp / Celular</p>
-                      <p className="text-sm font-mono text-white mt-1 select-all">{selectedProspect.phone || '—'}</p>
-                    </div>
-                    <div>
-                      <p className="text-[8px] text-white/30 uppercase tracking-widest">Correo Electrónico</p>
-                      <p className="text-sm font-mono text-white mt-1 lowercase select-all">{selectedProspect.email || '—'}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-white/[0.02] border border-white/5 p-4">
-                    <label className="text-[8px] text-white/30 uppercase tracking-widest block mb-2">Preferencia</label>
-                    <p className="text-[11px] uppercase text-white font-light italic">{selectedProspect.preferred_typology || 'GENERAL'}</p>
-                  </div>
-                  <div className="bg-white/[0.02] border border-white/5 p-4">
-                    <label className="text-[8px] text-white/30 uppercase tracking-widest block mb-2">Ingreso CRM</label>
-                    <p className="text-[11px] font-mono text-purple-400">{formatDate(selectedProspect.first_contact_date)}</p>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[9px] text-white/20 uppercase tracking-[0.2em] block mb-3 font-bold">Bitácora de Notas</label>
-                  <div className="bg-black border border-white/5 p-5 min-h-[150px]">
-                    <p className="text-[11px] leading-relaxed text-white/50 italic whitespace-pre-wrap">{selectedProspect.notes || 'No hay anotaciones en el historial.'}</p>
-                  </div>
-                </div>
-              </section>
-
-              <div className="pt-6">
-                <button className="w-full py-5 bg-white text-black text-[10px] uppercase tracking-[0.3em] hover:bg-purple-600 hover:text-white transition-all font-black italic">
-                  Editar Datos del Cliente
-                </button>
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setSelectedProspect(null)} />
+          <div className="relative w-full max-w-md bg-zinc-950 border-l border-white/10 h-full p-10 shadow-2xl overflow-y-auto">
+            <header className="border-b border-white/5 pb-6 mb-8 flex justify-between items-start">
+              <div>
+                <span className="text-[8px] uppercase tracking-[0.3em] text-purple-500 font-bold">Ficha Técnica</span>
+                <h2 className="text-3xl font-extralight tracking-tighter uppercase italic text-white mt-1">{selectedProspect.full_name}</h2>
               </div>
+              <button onClick={() => setSelectedProspect(null)} className="text-white/20 hover:text-white text-xs border border-white/10 px-2 py-1">Cerrar</button>
+            </header>
+
+            <div className="space-y-6">
+               <div className="bg-white/[0.02] border border-white/5 p-4">
+                  <p className="text-[8px] text-white/30 uppercase mb-1 tracking-widest">Contacto Directo</p>
+                  <p className="text-sm font-mono text-white select-all">{selectedProspect.phone || '—'}</p>
+                  <p className="text-[10px] text-white/50 mt-2 lowercase">{selectedProspect.email || '—'}</p>
+               </div>
+               <div className="bg-black border border-white/5 p-4">
+                  <p className="text-[8px] text-white/30 uppercase mb-2">Historial de Notas</p>
+                  <p className="text-[11px] leading-relaxed text-white/60 italic">{selectedProspect.notes || 'Sin bitácora.'}</p>
+               </div>
             </div>
           </div>
         </div>
