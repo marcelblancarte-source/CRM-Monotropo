@@ -40,8 +40,11 @@ export default function ProspectsPage() {
   async function loadInitialData() {
     setLoading(true)
     
-    // 1. Cargar Prospectos
-    const { data: pData } = await supabase.from('prospects').select('*').order('created_at', { ascending: false })
+    // 1. Cargar Prospectos ordenados por creación (Orden Estable)
+    const { data: pData } = await supabase
+      .from('prospects')
+      .select('*')
+      .order('created_at', { ascending: false })
     
     // 2. Cargar Equipos
     const { data: tData } = await supabase.from('teams').select('id, name')
@@ -57,9 +60,26 @@ export default function ProspectsPage() {
 
   useEffect(() => { loadInitialData() }, [])
 
+  // FUNCIÓN CORREGIDA: Actualización Optimista (Evita saltos en la lista)
   async function updateProspect(id: string, updates: Partial<Prospect>) {
-    const { error } = await supabase.from('prospects').update(updates).eq('id', id)
-    if (!error) loadInitialData()
+    // 1. Cambiamos el estado local inmediatamente para que la UI no se mueva
+    setProspects(prev => prev.map(p => 
+      p.id === id ? { ...p, ...updates } : p
+    ));
+
+    // 2. Actualizamos Supabase en segundo plano
+    const { error } = await supabase
+      .from('prospects')
+      .update(updates)
+      .eq('id', id);
+
+    if (error) {
+      console.error("Error al actualizar:", error);
+      loadInitialData(); // Solo recargamos si hubo un error real
+      alert("Error al sincronizar con el servidor.");
+    }
+    
+    // NO llamamos a loadInitialData() si todo sale bien para mantener la posición del renglón.
   }
 
   const formatDate = (dateStr: string | null) => {
@@ -68,7 +88,7 @@ export default function ProspectsPage() {
   }
 
   return (
-    <div className="relative min-h-screen bg-black text-white p-8">
+    <div className="relative min-h-screen bg-black text-white p-8 font-sans">
       {/* Header */}
       <div className="flex justify-between items-end border-b border-white/10 pb-8 mb-8">
         <div>
@@ -82,33 +102,33 @@ export default function ProspectsPage() {
         type="text" 
         value={search} 
         onChange={e => setSearch(e.target.value)} 
-        placeholder="BUSCAR CLIENTE..." 
+        placeholder="BUSCAR POR NOMBRE..." 
         className="h-12 w-full bg-zinc-950 border border-white/10 px-4 text-[11px] uppercase tracking-widest mb-8 outline-none focus:border-purple-500 transition-all" 
       />
 
-      {/* Tabla */}
+      {/* Tabla de Gestión */}
       <div className="border border-white/10 bg-zinc-950 overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>
-            <tr className="border-b border-white/10 bg-white/[0.02] text-[9px] uppercase tracking-[0.2em] text-white/30 font-bold italic">
-              <th className="px-6 py-4">Asignación Manual</th>
-              <th className="px-6 py-4">Cliente (Click p/ Detalle)</th>
+            <tr className="border-b border-white/10 bg-white/[0.02] text-[9px] uppercase tracking-[0.2em] text-white/30 font-bold italic text-nowrap">
+              <th className="px-6 py-4">Asignación (Equipo / Asesor)</th>
+              <th className="px-6 py-4">Cliente (Detalles)</th>
               <th className="px-6 py-4">Estatus</th>
               <th className="px-6 py-4">Últ. Gestión</th>
-              <th className="px-6 py-4">Notas Rápidas</th>
+              <th className="px-6 py-4">Notas de Seguimiento</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
             {prospects.filter(p => p.full_name.toLowerCase().includes(search.toLowerCase())).map((p) => {
               const temp = TEMP_BADGE[p.temperature ?? ''] ?? { label: '—', dot: 'bg-zinc-800', text: 'text-zinc-500' }
               return (
-                <tr key={p.id} className="group hover:bg-white/[0.01]">
-                  {/* Selector Dual: Equipo y Asesor */}
-                  <td className="px-6 py-5 min-w-[200px] space-y-1">
+                <tr key={p.id} className="group hover:bg-white/[0.01] transition-colors">
+                  {/* SELECTORES DE ASIGNACIÓN */}
+                  <td className="px-6 py-5 min-w-[220px] space-y-1">
                     <select 
                       value={p.team_id || ''} 
                       onChange={(e) => updateProspect(p.id, { team_id: e.target.value, assigned_to: null })}
-                      className="block w-full bg-transparent text-[9px] uppercase text-white/30 outline-none border-none focus:text-white"
+                      className="block w-full bg-transparent text-[9px] uppercase text-white/30 outline-none border-none focus:text-white transition-colors cursor-pointer"
                     >
                       <option value="">Seleccionar Equipo...</option>
                       {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -127,36 +147,46 @@ export default function ProspectsPage() {
                     </select>
                   </td>
 
-                  {/* Nombre con Trigger de Ficha */}
+                  {/* NOMBRE Y ACCESO A FICHA */}
                   <td className="px-6 py-5 cursor-pointer" onClick={() => setSelectedProspect(p)}>
                     <p className="text-xs uppercase tracking-wider font-light text-white group-hover:text-purple-400 transition-colors underline decoration-white/10 underline-offset-4">
                       {p.full_name}
                     </p>
+                    <p className="text-[8px] text-white/20 mt-1 uppercase italic tracking-tighter">{p.preferred_typology || 'Sin Unidad'}</p>
                   </td>
 
-                  <td className="px-6 py-5 text-[9px] uppercase font-bold">
-                    <span className={`flex items-center gap-2 ${temp.text}`}>
+                  {/* ESTATUS DE TEMPERATURA */}
+                  <td className="px-6 py-5">
+                    <div className="flex items-center gap-2">
                       <span className={`h-1.5 w-1.5 rounded-full ${temp.dot}`} />
-                      {temp.label}
-                    </span>
+                      <span className={`text-[9px] uppercase font-bold ${temp.text}`}>{temp.label}</span>
+                    </div>
                   </td>
 
-                  <td className="px-6 py-5 text-[10px] font-mono text-white/40">{formatDate(p.last_contact_date)}</td>
+                  {/* ÚLTIMA GESTIÓN */}
+                  <td className="px-6 py-5 text-[10px] font-mono text-white/40 italic">
+                    {formatDate(p.last_contact_date)}
+                  </td>
 
-                  {/* Nota rápida */}
+                  {/* NOTAS CON EDICIÓN RÁPIDA */}
                   <td className="px-6 py-5 max-w-xs">
                     {editingId === p.id ? (
                       <input 
                         autoFocus 
                         value={tempNote} 
                         onChange={e => setTempNote(e.target.value)} 
-                        onBlur={() => { updateProspect(p.id, { notes: tempNote, last_contact_date: new Date().toISOString() }); setEditingId(null); }}
+                        onBlur={() => { 
+                          if (tempNote !== p.notes) {
+                            updateProspect(p.id, { notes: tempNote, last_contact_date: new Date().toISOString() }); 
+                          }
+                          setEditingId(null); 
+                        }}
                         onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                        className="bg-zinc-900 border border-purple-500 px-2 py-1 text-[10px] text-white w-full outline-none" 
+                        className="bg-zinc-900 border border-purple-500/50 px-2 py-1 text-[10px] text-white w-full outline-none" 
                       />
                     ) : (
-                      <p onClick={() => { setEditingId(p.id); setTempNote(p.notes || '') }} className="text-[10px] text-white/30 italic cursor-pointer truncate">
-                        {p.notes || "Añadir nota..."}
+                      <p onClick={() => { setEditingId(p.id); setTempNote(p.notes || '') }} className="text-[10px] text-white/30 italic cursor-pointer truncate hover:text-white transition-all">
+                        {p.notes || "Hacer seguimiento..."}
                       </p>
                     )}
                   </td>
@@ -167,56 +197,56 @@ export default function ProspectsPage() {
         </table>
       </div>
 
-      {/* PANEL LATERAL: DETALLES DEL PROSPECTO */}
+      {/* MODAL: FICHA TÉCNICA LATERAL */}
       {selectedProspect && (
         <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedProspect(null)} />
-          <div className="relative w-full max-w-md bg-zinc-950 border-l border-white/10 h-full p-10 shadow-2xl overflow-y-auto animate-in slide-in-from-right duration-300">
-            <button onClick={() => setSelectedProspect(null)} className="absolute top-6 right-6 text-white/20 hover:text-white text-xs uppercase tracking-widest">Cerrar ✕</button>
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setSelectedProspect(null)} />
+          <div className="relative w-full max-w-md bg-zinc-950 border-l border-white/10 h-full p-10 shadow-2xl overflow-y-auto animate-in slide-in-from-right duration-500">
+            <button onClick={() => setSelectedProspect(null)} className="absolute top-6 right-6 text-white/20 hover:text-white text-[10px] uppercase tracking-widest border border-white/10 px-3 py-1 hover:bg-white hover:text-black transition-all font-bold">Cerrar ✕</button>
             
-            <div className="space-y-8 mt-10">
+            <div className="space-y-10 mt-12">
               <header className="border-b border-white/5 pb-6">
-                <span className="text-[8px] uppercase tracking-[0.3em] text-purple-500 font-bold">Ficha de Cliente</span>
-                <h2 className="text-3xl font-extralight tracking-tighter uppercase italic text-white mt-1">{selectedProspect.full_name}</h2>
+                <span className="text-[8px] uppercase tracking-[0.4em] text-purple-500 font-bold italic">Expediente Prospecto</span>
+                <h2 className="text-4xl font-extralight tracking-tighter uppercase italic text-white mt-2 leading-none">{selectedProspect.full_name}</h2>
               </header>
 
-              <section className="space-y-6">
+              <section className="space-y-8">
                 <div>
-                  <label className="text-[9px] text-white/20 uppercase tracking-[0.2em] block mb-2 font-bold">Datos de Contacto</label>
-                  <div className="bg-white/[0.02] border border-white/5 p-4 space-y-4">
+                  <label className="text-[9px] text-white/20 uppercase tracking-[0.2em] block mb-3 font-bold">Canales de Comunicación</label>
+                  <div className="bg-white/[0.02] border border-white/5 p-5 space-y-4">
                     <div>
-                      <p className="text-[8px] text-white/30 uppercase">WhatsApp / Tel</p>
-                      <p className="text-sm font-mono text-white mt-1">{selectedProspect.phone || '—'}</p>
+                      <p className="text-[8px] text-white/30 uppercase tracking-widest">WhatsApp / Celular</p>
+                      <p className="text-sm font-mono text-white mt-1 select-all">{selectedProspect.phone || '—'}</p>
                     </div>
                     <div>
-                      <p className="text-[8px] text-white/30 uppercase">Correo Electrónico</p>
-                      <p className="text-sm font-mono text-white mt-1 lowercase">{selectedProspect.email || '—'}</p>
+                      <p className="text-[8px] text-white/30 uppercase tracking-widest">Correo Electrónico</p>
+                      <p className="text-sm font-mono text-white mt-1 lowercase select-all">{selectedProspect.email || '—'}</p>
                     </div>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[9px] text-white/20 uppercase tracking-[0.2em] block mb-2 font-bold">Unidad de Interés</label>
-                    <p className="text-[11px] uppercase text-white border border-white/10 p-3 italic">{selectedProspect.preferred_typology || 'GENERAL'}</p>
+                  <div className="bg-white/[0.02] border border-white/5 p-4">
+                    <label className="text-[8px] text-white/30 uppercase tracking-widest block mb-2">Preferencia</label>
+                    <p className="text-[11px] uppercase text-white font-light italic">{selectedProspect.preferred_typology || 'GENERAL'}</p>
                   </div>
-                  <div>
-                    <label className="text-[9px] text-white/20 uppercase tracking-[0.2em] block mb-2 font-bold">1er Contacto</label>
-                    <p className="text-[11px] font-mono text-purple-400 border border-white/10 p-3">{formatDate(selectedProspect.first_contact_date)}</p>
+                  <div className="bg-white/[0.02] border border-white/5 p-4">
+                    <label className="text-[8px] text-white/30 uppercase tracking-widest block mb-2">Ingreso CRM</label>
+                    <p className="text-[11px] font-mono text-purple-400">{formatDate(selectedProspect.first_contact_date)}</p>
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-[9px] text-white/20 uppercase tracking-[0.2em] block mb-2 font-bold">Historial de Situación</label>
-                  <div className="bg-black border border-white/5 p-4 min-h-[100px]">
-                    <p className="text-[11px] leading-relaxed text-white/50 italic whitespace-pre-wrap">{selectedProspect.notes || 'Sin anotaciones previas.'}</p>
+                  <label className="text-[9px] text-white/20 uppercase tracking-[0.2em] block mb-3 font-bold">Bitácora de Notas</label>
+                  <div className="bg-black border border-white/5 p-5 min-h-[150px]">
+                    <p className="text-[11px] leading-relaxed text-white/50 italic whitespace-pre-wrap">{selectedProspect.notes || 'No hay anotaciones en el historial.'}</p>
                   </div>
                 </div>
               </section>
 
-              <div className="pt-10">
-                <button className="w-full py-4 border border-white/10 text-[10px] uppercase tracking-widest hover:bg-white hover:text-black transition-all font-bold">
-                  Editar Datos Completos
+              <div className="pt-6">
+                <button className="w-full py-5 bg-white text-black text-[10px] uppercase tracking-[0.3em] hover:bg-purple-600 hover:text-white transition-all font-black italic">
+                  Editar Datos del Cliente
                 </button>
               </div>
             </div>
