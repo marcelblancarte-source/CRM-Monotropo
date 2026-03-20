@@ -23,27 +23,19 @@ export default function ProspectDetailPage() {
   const [noteText, setNoteText] = useState('')
   const [savingNote, setSavingNote] = useState(false)
   const [temperature, setTemperature] = useState('')
-
-  // Modales
   const [showVisitModal, setShowVisitModal] = useState(false)
   const [showQuoteModal, setShowQuoteModal] = useState(false)
   const [showPrefsModal, setShowPrefsModal] = useState(false)
   const [saving, setSaving] = useState(false)
-
-  // Visita
   const [visited, setVisited] = useState(false)
   const [visitDate, setVisitDate] = useState('')
   const [visitNotes, setVisitNotes] = useState('')
-
-  // Cotización
   const [hasQuote, setHasQuote] = useState(false)
   const [quoteDate, setQuoteDate] = useState('')
   const [quotedUnitId, setQuotedUnitId] = useState('')
   const [offeredPrice, setOfferedPrice] = useState('')
   const [paymentSchemeId, setPaymentSchemeId] = useState('')
   const [selectedUnitPrice, setSelectedUnitPrice] = useState<number | null>(null)
-
-  // Preferencias
   const [preferredRooms, setPreferredRooms] = useState('')
   const [priceRangeMin, setPriceRangeMin] = useState('')
   const [priceRangeMax, setPriceRangeMax] = useState('')
@@ -73,7 +65,7 @@ export default function ProspectDetailPage() {
 
   async function loadUnitsAndSchemes() {
     const [{ data: unitsData }, { data: schemesData }] = await Promise.all([
-      supabase.from('units').select('id, unit_number, tower, floor, list_price').eq('status', 'available').order('unit_number'),
+      supabase.from('units').select('id, unit_number, tower, floor, list_price').order('unit_number'),
       supabase.from('payment_schemes').select('id, name').order('name'),
     ])
     setUnits(unitsData ?? [])
@@ -180,7 +172,6 @@ export default function ProspectDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center gap-4">
         <Link href="/prospects" className="text-white/40 hover:text-white transition">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
@@ -194,7 +185,6 @@ export default function ProspectDetailPage() {
         </div>
       </div>
 
-      {/* Temperatura */}
       <div className="rounded-xl border border-white/10 bg-zinc-950 p-4">
         <p className="text-xs text-white/40 uppercase tracking-widest mb-3">Actualizar temperatura</p>
         <div className="flex flex-wrap gap-2">
@@ -210,7 +200,6 @@ export default function ProspectDetailPage() {
       <div className="grid gap-6 md:grid-cols-3">
         <div className="md:col-span-2 space-y-6">
 
-          {/* Info del prospecto */}
           <div className="rounded-xl border border-white/10 bg-zinc-950">
             <div className="border-b border-white/10 px-6 py-4">
               <h3 className="font-semibold">Información del Prospecto</h3>
@@ -219,86 +208,51 @@ export default function ProspectDetailPage() {
               <div><p className="text-xs text-white/40 uppercase">Teléfono</p><p className="font-medium">{prospect.phone ?? '—'}</p></div>
               <div><p className="text-xs text-white/40 uppercase">Correo</p><p className="font-medium">{prospect.email ?? '—'}</p></div>
               <div><p className="text-xs text-white/40 uppercase">Origen</p><p className="font-medium">{prospect.source ?? '—'}</p></div>
-              <div><p className="text-xs text-white/40 uppercase">Fecha 1er contacto</p><p className="font-medium">{prospect.first_contact_date ?? '—'}</p></div>
+              <div><p className="text-xs text-white/40 uppercase">Último contacto</p><p className="font-medium">{prospect.last_contact_date ?? '—'}</p></div>
             </div>
           </div>
 
-          {/* Visita */}
           <div className="rounded-xl border border-white/10 bg-zinc-950">
             <div className="border-b border-white/10 px-6 py-4 flex justify-between items-center">
               <h3 className="font-semibold">Visita al Desarrollo</h3>
               <button onClick={openVisitModal} className="text-xs text-white/40 hover:text-white transition-all">Editar</button>
             </div>
             <div className="p-6 grid gap-4 sm:grid-cols-2">
-              <div>
-                <p className="text-xs text-white/40 uppercase">¿Visitó?</p>
-                <p className="font-medium">{prospect.visited ? '✅ Sí' : '❌ No'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-white/40 uppercase">Fecha</p>
-                <p className="font-medium">{prospect.visit_date ?? '—'}</p>
-              </div>
-              <div className="sm:col-span-2">
-                <p className="text-xs text-white/40 uppercase">Observaciones</p>
-                <p className="font-medium text-white/60">{prospect.visit_notes ?? '—'}</p>
-              </div>
+              <div><p className="text-xs text-white/40 uppercase">¿Visitó?</p><p className="font-medium">{prospect.visited ? '✅ Sí' : '❌ No'}</p></div>
+              <div><p className="text-xs text-white/40 uppercase">Fecha</p><p className="font-medium">{prospect.visit_date ?? '—'}</p></div>
+              <div className="sm:col-span-2"><p className="text-xs text-white/40 uppercase">Observaciones</p><p className="font-medium text-white/60">{prospect.visit_notes ?? '—'}</p></div>
             </div>
           </div>
 
-          {/* Cotización */}
           <div className="rounded-xl border border-white/10 bg-zinc-950">
             <div className="border-b border-white/10 px-6 py-4 flex justify-between items-center">
               <h3 className="font-semibold">Cotización</h3>
               <button onClick={openQuoteModal} className="text-xs text-white/40 hover:text-white transition-all">Editar</button>
             </div>
             <div className="p-6 grid gap-4 sm:grid-cols-2">
-              <div>
-                <p className="text-xs text-white/40 uppercase">¿Tiene cotización?</p>
-                <p className="font-medium">{prospect.has_quote ? '✅ Sí' : '❌ No'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-white/40 uppercase">Fecha</p>
-                <p className="font-medium">{prospect.quote_date ?? '—'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-white/40 uppercase">Precio lista</p>
-                <p className="font-medium line-through text-white/40">{prospect.list_price_at_quote ? `$${prospect.list_price_at_quote.toLocaleString('es-MX')}` : '—'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-white/40 uppercase">Precio ofrecido</p>
-                <p className="font-bold text-green-400">{prospect.offered_price ? `$${prospect.offered_price.toLocaleString('es-MX')}` : '—'}</p>
-              </div>
+              <div><p className="text-xs text-white/40 uppercase">¿Tiene cotización?</p><p className="font-medium">{prospect.has_quote ? '✅ Sí' : '❌ No'}</p></div>
+              <div><p className="text-xs text-white/40 uppercase">Fecha</p><p className="font-medium">{prospect.quote_date ?? '—'}</p></div>
+              <div><p className="text-xs text-white/40 uppercase">Precio lista</p><p className="font-medium line-through text-white/40">{prospect.list_price_at_quote ? `$${prospect.list_price_at_quote.toLocaleString('es-MX')}` : '—'}</p></div>
+              <div><p className="text-xs text-white/40 uppercase">Precio ofrecido</p><p className="font-bold text-green-400">{prospect.offered_price ? `$${prospect.offered_price.toLocaleString('es-MX')}` : '—'}</p></div>
             </div>
           </div>
 
-          {/* Preferencias */}
           <div className="rounded-xl border border-white/10 bg-zinc-950">
             <div className="border-b border-white/10 px-6 py-4 flex justify-between items-center">
               <h3 className="font-semibold">Preferencias</h3>
               <button onClick={openPrefsModal} className="text-xs text-white/40 hover:text-white transition-all">Editar</button>
             </div>
             <div className="p-6 grid gap-4 sm:grid-cols-2">
-              <div>
-                <p className="text-xs text-white/40 uppercase">Tipología</p>
-                <p className="font-medium">{prospect.preferred_typology ?? '—'}</p>
-              </div>
-              <div>
-                <p className="text-xs text-white/40 uppercase">Recámaras</p>
-                <p className="font-medium">{prospect.preferred_rooms ?? '—'}</p>
-              </div>
+              <div><p className="text-xs text-white/40 uppercase">Tipología</p><p className="font-medium">{prospect.preferred_typology ?? '—'}</p></div>
+              <div><p className="text-xs text-white/40 uppercase">Recámaras</p><p className="font-medium">{prospect.preferred_rooms ?? '—'}</p></div>
               <div className="sm:col-span-2">
                 <p className="text-xs text-white/40 uppercase">Rango de precio</p>
-                <p className="font-medium">
-                  {prospect.price_range_min || prospect.price_range_max
-                    ? `$${(prospect.price_range_min ?? 0).toLocaleString('es-MX')} — $${(prospect.price_range_max ?? 0).toLocaleString('es-MX')}`
-                    : '—'}
-                </p>
+                <p className="font-medium">{prospect.price_range_min || prospect.price_range_max ? `$${(prospect.price_range_min ?? 0).toLocaleString('es-MX')} — $${(prospect.price_range_max ?? 0).toLocaleString('es-MX')}` : '—'}</p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Bitácora */}
         <div className="md:col-span-1 space-y-4">
           <h3 className="text-lg font-bold">Bitácora de Seguimiento</h3>
           <div className="rounded-xl border border-white/10 bg-zinc-950 p-4 space-y-3">
@@ -332,7 +286,6 @@ export default function ProspectDetailPage() {
         </div>
       </div>
 
-      {/* Modal Visita */}
       {showVisitModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
           <div className="w-full max-w-md rounded-xl border border-white/10 bg-zinc-950 p-6 space-y-4">
@@ -367,7 +320,6 @@ export default function ProspectDetailPage() {
         </div>
       )}
 
-      {/* Modal Cotización */}
       {showQuoteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 overflow-y-auto py-8">
           <div className="w-full max-w-md rounded-xl border border-white/10 bg-zinc-950 p-6 space-y-4">
@@ -379,7 +331,7 @@ export default function ProspectDetailPage() {
             {hasQuote && (
               <>
                 <div>
-                  <label className="text-xs text-white/40 uppercase tracking-widest">Fecha de cotización</label>
+                  <label className="text-xs text-white/40 uppercase tracking-widest">Fecha</label>
                   <input value={quoteDate} onChange={e => setQuoteDate(e.target.value)} type="date"
                     className="mt-1 w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-sm text-white focus:outline-none focus:border-white/30" />
                 </div>
@@ -399,9 +351,7 @@ export default function ProspectDetailPage() {
                       </option>
                     ))}
                   </select>
-                  {selectedUnitPrice && (
-                    <p className="text-xs text-white/40 mt-1">Precio lista: ${selectedUnitPrice.toLocaleString('es-MX')}</p>
-                  )}
+                  {selectedUnitPrice && <p className="text-xs text-white/40 mt-1">Precio lista: ${selectedUnitPrice.toLocaleString('es-MX')}</p>}
                 </div>
                 <div>
                   <label className="text-xs text-white/40 uppercase tracking-widest">Precio ofrecido</label>
@@ -437,7 +387,6 @@ export default function ProspectDetailPage() {
         </div>
       )}
 
-      {/* Modal Preferencias */}
       {showPrefsModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
           <div className="w-full max-w-md rounded-xl border border-white/10 bg-zinc-950 p-6 space-y-4">
@@ -447,11 +396,10 @@ export default function ProspectDetailPage() {
               <select value={preferredTypology} onChange={e => setPreferredTypology(e.target.value)}
                 className="mt-1 w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-sm text-white focus:outline-none focus:border-white/30">
                 <option value="">Seleccionar</option>
-                <option value="Estudio">Estudio</option>
-                <option value="1 Recámara">1 Recámara</option>
-                <option value="2 Recámaras">2 Recámaras</option>
-                <option value="3 Recámaras">3 Recámaras</option>
-                <option value="Penthouse">Penthouse</option>
+                <option value="JACARANDA">Jacaranda</option>
+                <option value="GALEANA">Galeana</option>
+                <option value="MAGNOLIA">Magnolia</option>
+                <option value="VARIOS">Varios</option>
               </select>
             </div>
             <div>
@@ -471,7 +419,7 @@ export default function ProspectDetailPage() {
                 <label className="text-xs text-white/40 uppercase tracking-widest">Precio máx.</label>
                 <input value={priceRangeMax} onChange={e => setPriceRangeMax(e.target.value)} type="number"
                   className="mt-1 w-full rounded-lg border border-white/10 bg-black px-3 py-2 text-sm text-white focus:outline-none focus:border-white/30"
-                  placeholder="3500000" />
+                  placeholder="8000000" />
               </div>
             </div>
             <div className="flex gap-3 justify-end pt-2">
