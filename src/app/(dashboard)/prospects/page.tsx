@@ -1,7 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+
+const TEMP_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  cold:    { label: 'Frío',             color: 'text-zinc-400',   bg: 'bg-zinc-800' },
+  warm:    { label: 'Tibio',            color: 'text-orange-400', bg: 'bg-orange-900/40' },
+  medium:  { label: 'Medio',            color: 'text-yellow-400', bg: 'bg-yellow-900/40' },
+  hot:     { label: 'Caliente',         color: 'text-green-400',  bg: 'bg-green-900/40' },
+  closing: { label: 'Cierre',           color: 'text-purple-400', bg: 'bg-purple-900/40' },
+}
 
 type Prospect = {
   id: string
@@ -9,319 +17,448 @@ type Prospect = {
   phone: string | null
   email: string | null
   temperature: string | null
-  last_contact_date: string | null
-  next_contact_date: string | null 
-  notes: string | null
-  assigned_to: string | null
-  team_id: string | null
-  visited_site: boolean
-  has_quote: boolean
+  visited: boolean | null
+  has_quote: boolean | null
   preferred_typology: string | null
+  first_contact_date: string | null
+  last_contact_date: string | null
+  next_followup_date: string | null
+  last_note_at: string | null
+  team_id: string | null
+  assigned_advisor_id: string | null
   created_at: string
 }
 
-const TEMP_OPTIONS = [
-  { id: 'cold',    label: 'Frío',     dot: 'bg-zinc-500',   text: 'text-zinc-400' },
-  { id: 'warm',    label: 'Tibio',    dot: 'bg-orange-500', text: 'text-orange-400' },
-  { id: 'hot',     label: 'Caliente', dot: 'bg-purple-500', text: 'text-purple-400' },
-  { id: 'medium',  label: 'Medio',    dot: 'bg-yellow-500', text: 'text-yellow-400' },
-  { id: 'closing', label: 'Cierre',   dot: 'bg-white',      text: 'text-white' },
-]
-
-const TEMP_MAP: Record<string, any> = TEMP_OPTIONS.reduce((acc, curr) => ({ ...acc, [curr.id]: curr }), {});
+type Team = { id: string; name: string }
+type User = { id: string; full_name: string; team_id: string | null }
 
 export default function ProspectsPage() {
   const [prospects, setProspects] = useState<Prospect[]>([])
-  const [teams, setTeams] = useState<{id: string, name: string}[]>([])
-  const [advisors, setAdvisors] = useState<{id: string, full_name: string, team_id: string | null}[]>([])
-  const [currentUser, setCurrentUser] = useState<any>(null)
-  const [selectedProspect, setSelectedProspect] = useState<Prospect | null>(null)
-  
-  // Filtros
+  const [teams, setTeams] = useState<Team[]>([])
+  const [users, setUsers] = useState<User[]>([])
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [filterType, setFilterType] = useState<'all' | 'urgent' | 'today'>('all')
-  const [filterTeam, setFilterTeam] = useState<string>('all')
-  const [filterAdvisor, setFilterAdvisor] = useState<string>('all')
+  const [filterTeam, setFilterTeam] = useState('')
+  const [filterAdvisor, setFilterAdvisor] = useState('')
+  const [filterUrgency, setFilterUrgency] = useState('all')
+  const [selected, setSelected] = useState<Prospect | null>(null)
+  const [notes, setNotes] = useState<any[]>([])
+  const [noteText, setNoteText] = useState('')
+  const [savingNote, setSavingNote] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const supabase = createClient()
+  const today = new Date().toISOString().split('T')[0]
 
   async function loadData() {
-    // 1. Obtener sesión y perfil del usuario actual
-    const { data: { user } } = await supabase.auth.getUser()
-    const { data: profile } = await supabase.from('profiles').select('*').eq('id', user?.id).single()
-    setCurrentUser(profile)
-
-    // 2. Cargar Teams y Profiles (Asesores)
-    const { data: tData } = await supabase.from('teams').select('id, name')
-    const { data: uData } = await supabase.from('profiles').select('id, full_name, team_id')
-    setTeams(tData ?? [])
-    setAdvisors(uData ?? [])
-
-    // 3. Cargar Prospectos con lógica de visibilidad
-    let query = supabase.from('prospects').select('*').order('created_at', { ascending: false })
-    
-    // Si no es admin, filtrar por su equipo
-    if (profile?.role !== 'admin') {
-      query = query.eq('team_id', profile?.team_id)
-    }
-
-    const { data: pData } = await query
-    setProspects(pData ?? [])
+    setLoading(true)
+    const [{ data: prospectsData }, { data: teamsData }, { data: usersData }] = await Promise.all([
+      supabase.from('prospects').select('*').order('created_at', { ascending: false }),
+      supabase.from('teams').select('id, name').order('name'),
+      supabase.from('users').select('id, full_name, team_id').order('full_name'),
+    ])
+    setProspects((prospectsData as any) ?? [])
+    setTeams(teamsData ?? [])
+    setUsers(usersData ?? [])
+    setLoading(false)
   }
 
   useEffect(() => { loadData() }, [])
 
-  const updateProspect = async (id: string, updates: Partial<Prospect>, isNoteUpdate: boolean = false) => {
-    let finalUpdates = { ...updates };
-    // Regla de Auditoría: Si se editan notas, se actualiza la "Última Gestión"
-    if (isNoteUpdate) finalUpdates.last_contact_date = new Date().toISOString();
-    
-    setProspects(prev => prev.map(p => p.id === id ? { ...p, ...finalUpdates } : p))
-    if (selectedProspect?.id === id) setSelectedProspect(prev => prev ? { ...prev, ...finalUpdates } : null)
-    
-    await supabase.from('prospects').update(finalUpdates).eq('id', id)
+  async function loadNotes(prospectId: string) {
+    const { data } = await supabase
+      .from('prospect_notes')
+      .select('*, users(full_name)')
+      .eq('prospect_id', prospectId)
+      .order('created_at', { ascending: false })
+    setNotes(data ?? [])
   }
 
-  const deleteProspect = async (id: string) => {
-    if (!confirm("¿Eliminar este prospecto permanentemente?")) return
-    await supabase.from('prospects').delete().eq('id', id)
-    setSelectedProspect(null)
+  function openDrawer(prospect: Prospect) {
+    setSelected(prospect)
+    setNoteText('')
+    setShowDeleteConfirm(false)
+    loadNotes(prospect.id)
+  }
+
+  function closeDrawer() {
+    setSelected(null)
+    setNotes([])
     loadData()
   }
 
-  const createProspect = async () => {
-    const name = prompt("Nombre completo del prospecto:")
-    if (!name) return
-    await supabase.from('prospects').insert([{ 
-      full_name: name, 
-      temperature: 'cold',
-      team_id: currentUser?.role !== 'admin' ? currentUser?.team_id : null 
-    }])
-    loadData()
+  async function updateField(id: string, field: string, value: any) {
+    await supabase.from('prospects').update({ [field]: value }).eq('id', id)
+    setProspects(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p))
+    if (selected?.id === id) setSelected(prev => prev ? { ...prev, [field]: value } : prev)
   }
 
-  const getAlertStatus = (dateStr: string | null) => {
-    if (!dateStr) return null;
-    const today = new Date(); today.setHours(0,0,0,0);
-    const target = new Date(dateStr + 'T00:00:00');
-    if (target < today) return 'vencido';
-    if (target.getTime() === today.getTime()) return 'hoy';
-    return 'futuro';
-  };
+  async function saveNote() {
+    if (!noteText.trim() || !selected) return
+    setSavingNote(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    const now = new Date().toISOString()
+    await supabase.from('prospect_notes').insert({
+      prospect_id: selected.id,
+      author_id: user?.id,
+      content: noteText,
+    })
+    await supabase.from('prospects').update({ last_note_at: now }).eq('id', selected.id)
+    setNoteText('')
+    setSavingNote(false)
+    loadNotes(selected.id)
+    setProspects(prev => prev.map(p => p.id === selected.id ? { ...p, last_note_at: now } : p))
+  }
 
-  const filteredProspects = prospects.filter(p => {
-    const matchesSearch = p.full_name.toLowerCase().includes(search.toLowerCase());
-    const matchesTeam = filterTeam === 'all' || p.team_id === filterTeam;
-    const matchesAdvisor = filterAdvisor === 'all' || p.assigned_to === filterAdvisor;
-    const alert = getAlertStatus(p.next_contact_date);
-    let matchesTime = true;
-    if (filterType === 'urgent') matchesTime = alert === 'vencido';
-    if (filterType === 'today') matchesTime = alert === 'hoy';
-    return matchesSearch && matchesTeam && matchesAdvisor && matchesTime;
-  });
+  async function deleteProspect() {
+    if (!selected) return
+    await supabase.from('prospect_notes').delete().eq('prospect_id', selected.id)
+    await supabase.from('prospects').delete().eq('id', selected.id)
+    closeDrawer()
+  }
+
+  const filteredAdvisors = filterTeam
+    ? users.filter(u => u.team_id === filterTeam)
+    : users
+
+  const filtered = prospects.filter(p => {
+    if (search && !p.full_name?.toLowerCase().includes(search.toLowerCase())) return false
+    if (filterTeam && p.team_id !== filterTeam) return false
+    if (filterAdvisor && p.assigned_advisor_id !== filterAdvisor) return false
+    if (filterUrgency === 'today' && p.next_followup_date !== today) return false
+    if (filterUrgency === 'overdue' && (!p.next_followup_date || p.next_followup_date >= today)) return false
+    return true
+  })
+
+  function getFollowupStatus(date: string | null) {
+    if (!date) return null
+    if (date < today) return 'overdue'
+    if (date === today) return 'today'
+    return 'ok'
+  }
+
+  function getTeamName(teamId: string | null) {
+    return teams.find(t => t.id === teamId)?.name ?? null
+  }
+
+  function getAdvisorName(advisorId: string | null) {
+    return users.find(u => u.id === advisorId)?.full_name ?? null
+  }
+
+  const overdueCount = prospects.filter(p => p.next_followup_date && p.next_followup_date < today).length
+  const todayCount = prospects.filter(p => p.next_followup_date === today).length
+  const hotCount = prospects.filter(p => p.temperature === 'hot' || p.temperature === 'closing').length
 
   return (
-    <div className="min-h-screen bg-black text-white p-8 font-sans selection:bg-purple-500/30">
-      
-      {/* HEADER DINÁMICO */}
-      <div className="flex justify-between items-end border-b border-white/10 pb-8 mb-10">
-        <div>
-          <h1 className="text-5xl font-extralight tracking-tighter uppercase italic leading-none">Boralba Living</h1>
-          <p className="text-[9px] uppercase tracking-[0.5em] text-purple-500 mt-4 font-black italic">
-            {currentUser?.role === 'admin' ? 'Panel de Auditoría CEO' : `Equipo: ${teams.find(t => t.id === currentUser?.team_id)?.name}`}
-          </p>
-        </div>
-        <button onClick={createProspect} className="bg-white text-black px-10 py-4 text-[10px] uppercase tracking-[0.3em] font-black italic hover:bg-purple-600 hover:text-white transition-all">
-          + Nuevo Registro
-        </button>
-      </div>
+    <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
+      {/* Main */}
+      <div className={`flex flex-col flex-1 overflow-hidden transition-all ${selected ? 'mr-[480px]' : ''}`}>
+        {/* Header */}
+        <div className="px-6 pt-6 pb-4 border-b border-white/10 bg-black">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-2xl font-extralight tracking-[0.1em] uppercase">Directorio de Prospectos</h1>
+              <p className="text-[10px] uppercase tracking-[0.2em] text-white/30 mt-1">{filtered.length} registros</p>
+            </div>
+            <button
+              onClick={() => {
+                const newProspect = { id: '', full_name: 'Nuevo Prospecto', phone: null, email: null, temperature: 'cold', visited: false, has_quote: false, preferred_typology: null, first_contact_date: today, last_contact_date: null, next_followup_date: null, last_note_at: null, team_id: null, assigned_advisor_id: null, created_at: new Date().toISOString() }
+                supabase.from('prospects').insert({ full_name: 'Nuevo Prospecto', temperature: 'cold', first_contact_date: today }).select().single().then(({ data }) => {
+                  if (data) { loadData(); openDrawer(data as any) }
+                })
+              }}
+              className="rounded-none border border-white/20 bg-transparent px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-white hover:bg-white hover:text-black transition-all"
+            >
+              + Nuevo Lead
+            </button>
+          </div>
 
-      {/* FILTROS DE AUDITORÍA */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="BUSCAR POR NOMBRE..." className="h-14 bg-zinc-950 border border-white/10 px-6 text-[10px] uppercase tracking-[0.3em] outline-none focus:border-purple-500/40 font-light" />
-        
-        {currentUser?.role === 'admin' && (
-          <>
-            <select value={filterTeam} onChange={e => {setFilterTeam(e.target.value); setFilterAdvisor('all');}} className="h-14 bg-zinc-950 border border-white/10 px-4 text-[10px] uppercase text-white/40 outline-none">
-              <option value="all">TODOS LOS EQUIPOS</option>
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-px bg-white/10 border border-white/10 mb-4">
+            <div className="bg-black px-4 py-3 text-center">
+              <p className="text-2xl font-light">{prospects.length}</p>
+              <p className="text-[9px] uppercase tracking-widest text-white/30 mt-1">Leads en Selección</p>
+            </div>
+            <div className="bg-black px-4 py-3 text-center">
+              <p className="text-2xl font-light text-purple-400">{hotCount}</p>
+              <p className="text-[9px] uppercase tracking-widest text-white/30 mt-1">Leads Calientes</p>
+            </div>
+            <div className="bg-black px-4 py-3 text-center">
+              <p className="text-2xl font-light text-white/40">{prospects.length > 0 ? Math.round((hotCount / prospects.length) * 100) : 0}%</p>
+              <p className="text-[9px] uppercase tracking-widest text-white/30 mt-1">% Conversión</p>
+            </div>
+          </div>
+
+          {/* Filters */}
+          <div className="flex gap-2 flex-wrap">
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Buscar nombre..."
+              className="h-8 flex-1 min-w-[180px] rounded-none border border-white/10 bg-zinc-950 px-3 text-xs text-white placeholder:text-white/20 focus:outline-none focus:border-white/30"
+            />
+            <select value={filterTeam} onChange={e => { setFilterTeam(e.target.value); setFilterAdvisor('') }}
+              className="h-8 rounded-none border border-white/10 bg-zinc-950 px-3 text-xs text-white focus:outline-none focus:border-white/30">
+              <option value="">Todos los Equipos</option>
               {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
-
-            <select value={filterAdvisor} onChange={e => setFilterAdvisor(e.target.value)} className="h-14 bg-zinc-950 border border-white/10 px-4 text-[10px] uppercase text-purple-400 font-bold outline-none">
-              <option value="all">TODOS LOS ASESORES</option>
-              {advisors.filter(a => filterTeam === 'all' || a.team_id === filterTeam).map(a => <option key={a.id} value={a.id}>{a.full_name}</option>)}
+            <select value={filterAdvisor} onChange={e => setFilterAdvisor(e.target.value)}
+              className="h-8 rounded-none border border-white/10 bg-zinc-950 px-3 text-xs text-white focus:outline-none focus:border-white/30">
+              <option value="">Todos los Asesores</option>
+              {filteredAdvisors.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
             </select>
-          </>
-        )}
+            <div className="flex border border-white/10">
+              {[['all','Todos'],['today','Hoy'],['overdue','Vencidos']].map(([val, label]) => (
+                <button key={val} onClick={() => setFilterUrgency(val)}
+                  className={`px-3 h-8 text-[10px] uppercase tracking-widest transition-all ${filterUrgency === val ? 'bg-white text-black' : 'bg-transparent text-white/40 hover:text-white'}`}>
+                  {label} {val === 'today' && todayCount > 0 && <span className="ml-1 text-yellow-400">{todayCount}</span>}
+                  {val === 'overdue' && overdueCount > 0 && <span className="ml-1 text-red-400">{overdueCount}</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
 
-        <div className="flex gap-1 bg-zinc-900 p-1 border border-white/5">
-          <button onClick={() => setFilterType('all')} className={`flex-1 text-[8px] uppercase tracking-widest transition-all ${filterType === 'all' ? 'bg-white text-black font-black' : 'text-white/20'}`}>Todos</button>
-          <button onClick={() => setFilterType('today')} className={`flex-1 text-[8px] uppercase tracking-widest transition-all ${filterType === 'today' ? 'bg-yellow-500 text-black font-black' : 'text-yellow-500/20'}`}>Hoy</button>
-          <button onClick={() => setFilterType('urgent')} className={`flex-1 text-[8px] uppercase tracking-widest transition-all ${filterType === 'urgent' ? 'bg-red-600 text-white font-black' : 'text-red-600/20'}`}>Vencidos</button>
+        {/* Table */}
+        <div className="flex-1 overflow-auto">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-zinc-950 border-b border-white/10 z-10">
+              <tr>
+                <th className="px-4 py-3 text-left text-[9px] uppercase tracking-[0.15em] text-white/30 font-normal">Equipo / Asesor</th>
+                <th className="px-4 py-3 text-left text-[9px] uppercase tracking-[0.15em] text-white/30 font-normal">Cliente / Interés</th>
+                <th className="px-4 py-3 text-left text-[9px] uppercase tracking-[0.15em] text-white/30 font-normal">Primer Contacto</th>
+                <th className="px-4 py-3 text-left text-[9px] uppercase tracking-[0.15em] text-white/30 font-normal">Última Gestión</th>
+                <th className="px-4 py-3 text-left text-[9px] uppercase tracking-[0.15em] text-white/30 font-normal">Próx. Seguimiento</th>
+                <th className="px-4 py-3 text-center text-[9px] uppercase tracking-[0.15em] text-white/30 font-normal">Visita</th>
+                <th className="px-4 py-3 text-center text-[9px] uppercase tracking-[0.15em] text-white/30 font-normal">Cotiz.</th>
+                <th className="px-4 py-3 text-left text-[9px] uppercase tracking-[0.15em] text-white/30 font-normal">Temperatura</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {loading ? (
+                <tr><td colSpan={8} className="px-4 py-12 text-center text-white/20 text-xs">Cargando...</td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={8} className="px-4 py-12 text-center text-white/20 text-xs">No hay prospectos registrados.</td></tr>
+              ) : filtered.map(p => {
+                const followupStatus = getFollowupStatus(p.next_followup_date)
+                const isSelected = selected?.id === p.id
+                return (
+                  <tr key={p.id}
+                    onClick={() => openDrawer(p)}
+                    className={`cursor-pointer transition-all hover:bg-white/5 ${isSelected ? 'bg-white/5 border-l-2 border-purple-500' : ''}`}>
+                    <td className="px-4 py-3">
+                      <p className="text-purple-400 font-medium">{getAdvisorName(p.assigned_advisor_id) ?? <span className="text-white/20 italic">Sin Asesor</span>}</p>
+                      <p className="text-white/30 text-[10px] mt-0.5">{getTeamName(p.team_id) ?? <span className="italic">Sin Equipo</span>}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-white">{p.full_name}</p>
+                      {p.preferred_typology && <p className="text-white/30 text-[10px] mt-0.5">{p.preferred_typology}</p>}
+                    </td>
+                    <td className="px-4 py-3 text-white/40">
+                      {p.first_contact_date ? new Date(p.first_contact_date + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-white/40">
+                      {p.last_note_at ? new Date(p.last_note_at).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: '2-digit' }) : p.last_contact_date ? new Date(p.last_contact_date + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      {p.next_followup_date ? (
+                        <span className={`text-[10px] font-medium ${followupStatus === 'overdue' ? 'text-red-400' : followupStatus === 'today' ? 'text-yellow-400' : 'text-white/50'}`}>
+                          {followupStatus === 'overdue' && '⚠ '}
+                          {followupStatus === 'today' && '● '}
+                          {new Date(p.next_followup_date + 'T12:00:00').toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
+                        </span>
+                      ) : <span className="text-white/20">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={p.visited ?? false}
+                        onChange={e => updateField(p.id, 'visited', e.target.checked)}
+                        className="h-3.5 w-3.5 accent-purple-500 cursor-pointer" />
+                    </td>
+                    <td className="px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={p.has_quote ?? false}
+                        onChange={e => updateField(p.id, 'has_quote', e.target.checked)}
+                        className="h-3.5 w-3.5 accent-purple-500 cursor-pointer" />
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${TEMP_CONFIG[p.temperature ?? '']?.bg ?? 'bg-zinc-800'} ${TEMP_CONFIG[p.temperature ?? '']?.color ?? 'text-zinc-400'}`}>
+                        {TEMP_CONFIG[p.temperature ?? '']?.label ?? '—'}
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {/* TABLA MAESTRA DE AUDITORÍA */}
-      <div className="bg-zinc-950 border border-white/10 shadow-2xl overflow-x-auto">
-        <table className="w-full text-left border-collapse min-w-[1000px]">
-          <thead>
-            <tr className="bg-white/[0.02] border-b border-white/10 text-[8px] uppercase tracking-[0.2em] text-white/30 font-bold italic">
-              <th className="px-6 py-5">Primer C. / Última G.</th>
-              <th className="px-6 py-5">Asignación</th>
-              <th className="px-6 py-5">Cliente / Interés</th>
-              <th className="px-6 py-5 text-center">V / C</th>
-              <th className="px-6 py-5">Próx. Contacto</th>
-              <th className="px-6 py-5">Temperatura</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-white/5">
-            {filteredProspects.map((p) => {
-              const alert = getAlertStatus(p.next_contact_date);
-              const t = TEMP_MAP[p.temperature ?? 'cold'] || TEMP_MAP['cold'];
-              const advisorName = advisors.find(ad => ad.id === p.assigned_to)?.full_name || 'Sin Asesor';
-
-              return (
-                <tr key={p.id} className="hover:bg-white/[0.01] group transition-all">
-                  <td className="px-6 py-6 font-mono text-[9px] space-y-1">
-                    <p className="text-white/20">{new Date(p.created_at).toLocaleDateString()}</p>
-                    <p className="text-purple-500/50 italic">{p.last_contact_date ? new Date(p.last_contact_date).toLocaleDateString() : '—'}</p>
-                  </td>
-                  <td className="px-6 py-6">
-                    <p className="text-[10px] text-purple-400 font-black uppercase tracking-widest">{advisorName}</p>
-                    <p className="text-[8px] text-white/20 uppercase mt-1 italic">{teams.find(tm => tm.id === p.team_id)?.name || '—'}</p>
-                  </td>
-                  <td className="px-6 py-6 cursor-pointer" onClick={() => setSelectedProspect(p)}>
-                    <p className="text-xs font-bold uppercase group-hover:text-purple-400 transition-all underline decoration-white/5 underline-offset-8">{p.full_name}</p>
-                    <p className="text-[8px] text-white/30 mt-2 uppercase italic tracking-widest">{p.preferred_typology || 'Unidad no definida'}</p>
-                  </td>
-                  <td className="px-6 py-6">
-                    <div className="flex justify-center gap-4">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className="text-[7px] text-white/20 uppercase">Visita</span>
-                        <input type="checkbox" checked={p.visited_site || false} onChange={e => updateProspect(p.id, { visited_site: e.target.checked })} className="w-3 h-3 accent-purple-600" />
-                      </div>
-                      <div className="flex flex-col items-center gap-1">
-                        <span className="text-[7px] text-white/20 uppercase">Cotiz</span>
-                        <input type="checkbox" checked={p.has_quote || false} onChange={e => updateProspect(p.id, { has_quote: e.target.checked })} className="w-3 h-3 accent-white" />
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-6">
-                    <p className={`text-[10px] font-mono ${alert === 'vencido' ? 'text-red-500 font-black' : alert === 'hoy' ? 'text-yellow-500 font-black' : 'text-white/40'}`}>
-                      {p.next_contact_date?.split('-').reverse().join('/') || 'No prog.'}
-                    </p>
-                  </td>
-                  <td className="px-6 py-6">
-                    <div className="flex items-center gap-2">
-                      <span className={`h-1.5 w-1.5 rounded-full ${t.dot}`} />
-                      <span className={`text-[9px] font-black uppercase tracking-widest ${t.text}`}>{t.label}</span>
-                    </div>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {/* EXPEDIENTE MAESTRO (PANEL LATERAL) */}
-      {selectedProspect && (
-        <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-black/95 backdrop-blur-sm" onClick={() => setSelectedProspect(null)} />
-          <div className="relative w-full max-w-xl bg-zinc-950 border-l border-white/10 h-full p-12 shadow-2xl overflow-y-auto animate-in slide-in-from-right duration-500">
-            
-            <header className="border-b border-white/5 pb-10 mb-10 flex justify-between items-start">
+      {/* Drawer */}
+      {selected && (
+        <div className="fixed right-0 top-0 h-full w-[480px] bg-zinc-950 border-l border-white/10 z-50 flex flex-col overflow-hidden">
+          {/* Drawer Header */}
+          <div className="px-6 pt-6 pb-4 border-b border-white/10">
+            <div className="flex items-start justify-between">
               <div>
-                <span className="text-[9px] uppercase tracking-[0.5em] text-purple-500 font-black italic">Expediente Maestro</span>
-                <h2 className="text-5xl font-extralight tracking-tighter uppercase italic text-white mt-4 leading-none">{selectedProspect.full_name}</h2>
-              </div>
-              <button onClick={() => setSelectedProspect(null)} className="text-white/20 hover:text-white text-[10px] uppercase font-bold border border-white/10 px-4 py-2">Cerrar ✕</button>
-            </header>
-
-            <div className="space-y-12">
-              
-              {/* SECCIÓN ASIGNACIÓN (Lógica Cascada) */}
-              <section className="grid grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <p className="text-[8px] text-white/30 uppercase font-black italic">Equipo / Célula</p>
-                  <select 
-                    disabled={currentUser?.role !== 'admin'}
-                    value={selectedProspect.team_id || ''} 
-                    onChange={e => updateProspect(selectedProspect.id, { team_id: e.target.value, assigned_to: null })}
-                    className="w-full bg-zinc-900 border border-white/10 p-4 text-[10px] uppercase outline-none focus:border-purple-500/50 disabled:opacity-50"
-                  >
-                    <option value="">Sin Equipo</option>
-                    {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <p className="text-[8px] text-white/30 uppercase font-black italic">Asesor Responsable</p>
-                  <select 
-                    value={selectedProspect.assigned_to || ''} 
-                    onChange={e => updateProspect(selectedProspect.id, { assigned_to: e.target.value })}
-                    className="w-full bg-zinc-900 border border-white/10 p-4 text-[10px] uppercase text-purple-400 font-black outline-none focus:border-purple-500/50"
-                  >
-                    <option value="">Seleccionar Asesor</option>
-                    {advisors.filter(a => !selectedProspect.team_id || a.team_id === selectedProspect.team_id).map(a => (
-                      <option key={a.id} value={a.id}>{a.full_name}</option>
-                    ))}
-                  </select>
-                </div>
-              </section>
-
-              {/* DATOS DE CONTACTO */}
-              <section className="bg-white/[0.02] p-8 border border-white/5 space-y-6">
-                <div className="grid grid-cols-2 gap-6">
-                  <div>
-                    <p className="text-[8px] text-white/30 uppercase font-black mb-2">WhatsApp / Teléfono</p>
-                    <input type="text" value={selectedProspect.phone || ''} onChange={e => updateProspect(selectedProspect.id, { phone: e.target.value })} className="bg-transparent border-b border-white/10 w-full text-base font-mono py-2 outline-none focus:border-purple-500" />
-                  </div>
-                  <div>
-                    <p className="text-[8px] text-white/30 uppercase font-black mb-2">Email</p>
-                    <input type="email" value={selectedProspect.email || ''} onChange={e => updateProspect(selectedProspect.id, { email: e.target.value })} className="bg-transparent border-b border-white/10 w-full text-sm font-mono py-2 outline-none focus:border-purple-500 lowercase" />
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[8px] text-white/30 uppercase font-black mb-2">Unidad de Interés</p>
-                  <input type="text" value={selectedProspect.preferred_typology || ''} onChange={e => updateProspect(selectedProspect.id, { preferred_typology: e.target.value })} className="bg-transparent border-b border-white/10 w-full text-xs uppercase tracking-[0.2em] py-2 outline-none focus:border-purple-500" />
-                </div>
-              </section>
-
-              {/* TEMPERATURA */}
-              <div>
-                <p className="text-[8px] text-white/30 uppercase font-black mb-4 italic text-center">Estatus Comercial</p>
-                <div className="grid grid-cols-5 gap-1">
-                  {TEMP_OPTIONS.map((opt) => (
-                    <button key={opt.id} onClick={() => updateProspect(selectedProspect.id, { temperature: opt.id })} className={`py-3 border text-[8px] font-black tracking-widest transition-all ${selectedProspect.temperature === opt.id ? 'bg-white text-black border-white' : 'bg-white/5 border-white/5 text-white/20 hover:text-white'}`}>{opt.label}</button>
-                  ))}
-                </div>
-              </div>
-
-              {/* BITÁCORA DETALLADA */}
-              <section className="space-y-4">
-                <div className="flex justify-between items-end border-b border-white/5 pb-2">
-                  <p className="text-[8px] text-white/30 uppercase font-black italic">Bitácora de Seguimiento</p>
-                  <div className="flex items-center gap-3">
-                    <p className="text-[8px] text-purple-400 uppercase font-black">Próximo:</p>
-                    <input type="date" value={selectedProspect.next_contact_date || ''} onChange={e => updateProspect(selectedProspect.id, { next_contact_date: e.target.value })} className="bg-transparent text-[10px] font-mono text-white outline-none" />
-                  </div>
-                </div>
-                <textarea 
-                  value={selectedProspect.notes || ''} 
-                  onChange={e => updateProspect(selectedProspect.id, { notes: e.target.value }, true)} 
-                  placeholder="Ingrese notas detalladas..." 
-                  className="w-full bg-black border border-white/5 p-6 h-48 text-[11px] leading-relaxed text-white/60 italic outline-none focus:border-white/10 resize-none shadow-inner" 
+                <p className="text-[9px] uppercase tracking-[0.3em] text-purple-400 mb-2">Expediente Maestro</p>
+                <input
+                  value={selected.full_name}
+                  onChange={e => setSelected(prev => prev ? { ...prev, full_name: e.target.value } : prev)}
+                  onBlur={e => updateField(selected.id, 'full_name', e.target.value)}
+                  className="text-2xl font-extralight tracking-tight text-white bg-transparent border-none outline-none w-full italic"
                 />
-                <p className="text-[7px] text-white/10 uppercase text-right">Cualquier cambio en notas actualiza la fecha de auditoría.</p>
-              </section>
-
-              {/* ACCIONES CRÍTICAS */}
-              <div className="pt-10 flex flex-col gap-4">
-                <button onClick={() => window.open(`https://wa.me/${selectedProspect.phone?.replace(/\D/g,'')}`, '_blank')} className="w-full py-6 bg-white text-black text-[10px] uppercase font-black tracking-[0.4em] italic hover:bg-purple-600 hover:text-white transition-all">Lanzar Seguimiento WhatsApp</button>
-                <button onClick={() => deleteProspect(selectedProspect.id)} className="py-4 text-[8px] uppercase tracking-[0.3em] text-red-600/40 hover:text-red-600 font-bold border border-red-600/5 hover:border-red-600/20 transition-all">Eliminar Prospecto</button>
               </div>
-
+              <button onClick={closeDrawer} className="text-white/20 hover:text-white transition-all ml-4 mt-1">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
             </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+            {/* Contacto */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <span className="text-white/20 text-sm">📱</span>
+                <div className="flex-1">
+                  <input value={selected.phone ?? ''}
+                    onChange={e => setSelected(prev => prev ? { ...prev, phone: e.target.value } : prev)}
+                    onBlur={e => updateField(selected.id, 'phone', e.target.value || null)}
+                    placeholder="WhatsApp..."
+                    className="w-full bg-transparent border-b border-white/10 pb-1 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-white/30" />
+                </div>
+                {selected.phone && (
+                  <a href={`https://wa.me/${selected.phone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer"
+                    className="text-[10px] text-green-400 hover:text-green-300 border border-green-400/30 px-2 py-0.5 rounded-full">
+                    WA
+                  </a>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-white/20 text-sm">✉️</span>
+                <input value={selected.email ?? ''}
+                  onChange={e => setSelected(prev => prev ? { ...prev, email: e.target.value } : prev)}
+                  onBlur={e => updateField(selected.id, 'email', e.target.value || null)}
+                  placeholder="email..."
+                  className="flex-1 bg-transparent border-b border-white/10 pb-1 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-white/30" />
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-white/20 text-sm">🏠</span>
+                <input value={selected.preferred_typology ?? ''}
+                  onChange={e => setSelected(prev => prev ? { ...prev, preferred_typology: e.target.value } : prev)}
+                  onBlur={e => updateField(selected.id, 'preferred_typology', e.target.value || null)}
+                  placeholder="Unidad de interés..."
+                  className="flex-1 bg-transparent border-b border-white/10 pb-1 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-white/30" />
+              </div>
+            </div>
+
+            {/* Asignación */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[9px] uppercase tracking-widest text-white/30 block mb-1">Equipo</label>
+                <select value={selected.team_id ?? ''}
+                  onChange={e => { updateField(selected.id, 'team_id', e.target.value || null); setSelected(prev => prev ? { ...prev, team_id: e.target.value || null, assigned_advisor_id: null } : prev) }}
+                  className="w-full rounded-none border border-white/10 bg-black px-2 py-1.5 text-xs text-white focus:outline-none focus:border-white/30">
+                  <option value="">Sin Equipo</option>
+                  {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[9px] uppercase tracking-widest text-white/30 block mb-1">Asesor</label>
+                <select value={selected.assigned_advisor_id ?? ''}
+                  onChange={e => updateField(selected.id, 'assigned_advisor_id', e.target.value || null)}
+                  className="w-full rounded-none border border-white/10 bg-black px-2 py-1.5 text-xs text-white focus:outline-none focus:border-white/30">
+                  <option value="">Sin Asesor</option>
+                  {(selected.team_id ? users.filter(u => u.team_id === selected.team_id) : users).map(u => (
+                    <option key={u.id} value={u.id}>{u.full_name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Temperatura */}
+            <div>
+              <label className="text-[9px] uppercase tracking-widest text-white/30 block mb-2">Estatus Comercial</label>
+              <div className="grid grid-cols-5 gap-1">
+                {Object.entries(TEMP_CONFIG).map(([key, val]) => (
+                  <button key={key}
+                    onClick={() => updateField(selected.id, 'temperature', key)}
+                    className={`py-1.5 text-[10px] uppercase tracking-wider border transition-all ${selected.temperature === key ? 'border-white bg-white text-black' : 'border-white/10 text-white/40 hover:text-white hover:border-white/30'}`}>
+                    {val.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Hitos */}
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex items-center gap-3 border border-white/10 px-3 py-2 cursor-pointer hover:border-white/20 transition-all">
+                <input type="checkbox" checked={selected.visited ?? false}
+                  onChange={e => updateField(selected.id, 'visited', e.target.checked)}
+                  className="accent-purple-500" />
+                <span className="text-xs text-white/60">Visita Realizada</span>
+              </label>
+              <label className="flex items-center gap-3 border border-white/10 px-3 py-2 cursor-pointer hover:border-white/20 transition-all">
+                <input type="checkbox" checked={selected.has_quote ?? false}
+                  onChange={e => updateField(selected.id, 'has_quote', e.target.checked)}
+                  className="accent-purple-500" />
+                <span className="text-xs text-white/60">Cotización Entregada</span>
+              </label>
+            </div>
+
+            {/* Próximo seguimiento */}
+            <div>
+              <label className="text-[9px] uppercase tracking-widest text-white/30 block mb-1">Próximo Seguimiento</label>
+              <input type="date" value={selected.next_followup_date ?? ''}
+                onChange={e => updateField(selected.id, 'next_followup_date', e.target.value || null)}
+                className="w-full rounded-none border border-white/10 bg-black px-3 py-2 text-xs text-white focus:outline-none focus:border-white/30" />
+            </div>
+
+            {/* Bitácora */}
+            <div>
+              <label className="text-[9px] uppercase tracking-widest text-white/30 block mb-2">Bitácora de Seguimiento</label>
+              <div className="space-y-2">
+                <textarea value={noteText} onChange={e => setNoteText(e.target.value)}
+                  rows={3} placeholder="Notas de seguimiento..."
+                  className="w-full rounded-none border border-white/10 bg-black px-3 py-2 text-xs text-white placeholder:text-white/20 focus:outline-none focus:border-white/30 resize-none" />
+                <button onClick={saveNote} disabled={savingNote || !noteText.trim()}
+                  className="w-full py-2 text-[10px] uppercase tracking-widest border border-white/20 text-white/60 hover:bg-white hover:text-black transition-all disabled:opacity-30">
+                  {savingNote ? 'Guardando...' : 'Agregar Nota'}
+                </button>
+              </div>
+              <div className="mt-3 space-y-3 max-h-48 overflow-y-auto">
+                {notes.map(note => (
+                  <div key={note.id} className="border-l border-white/10 pl-3">
+                    <p className="text-xs text-white/60">{note.content}</p>
+                    <p className="text-[10px] text-white/20 mt-1">
+                      {Array.isArray(note.users) ? note.users[0]?.full_name : note.users?.full_name} — {new Date(note.created_at).toLocaleString('es-MX')}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Drawer Footer */}
+          <div className="px-6 py-4 border-t border-white/10">
+            {!showDeleteConfirm ? (
+              <button onClick={() => setShowDeleteConfirm(true)}
+                className="w-full py-2 text-[10px] uppercase tracking-widest text-red-500/60 border border-red-500/20 hover:bg-red-500/10 transition-all">
+                Eliminar Prospecto
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-[10px] text-red-400 text-center uppercase tracking-widest">¿Confirmar eliminación permanente?</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => setShowDeleteConfirm(false)}
+                    className="py-2 text-[10px] uppercase tracking-widest border border-white/10 text-white/40 hover:text-white transition-all">
+                    Cancelar
+                  </button>
+                  <button onClick={deleteProspect}
+                    className="py-2 text-[10px] uppercase tracking-widest bg-red-600 text-white hover:bg-red-700 transition-all">
+                    Eliminar
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
