@@ -25,6 +25,12 @@ export default async function DashboardLayout({
         .eq('id', user.id)
         .single()
 
+    const { data: projects } = await supabase
+        .from('projects')
+        .select('id, name')
+        .eq('status', 'active')
+        .order('name')
+
     const role: string = userData?.sys_roles?.name ?? 'sales_advisor'
     const isSuperAdmin = role === 'super_admin'
     const isLeader = role === 'team_leader'
@@ -32,16 +38,11 @@ export default async function DashboardLayout({
 
     return (
         <div className="flex min-h-screen bg-black text-white">
-            {/* ── Sidebar ─────────────────────────────────────────────────── */}
             <aside className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-white/10 bg-zinc-950">
-                {/* Logo Section */}
+                {/* Logo */}
                 <div className="flex h-20 shrink-0 items-center gap-3 border-b border-white/10 px-6">
                     <div className="flex h-10 w-10 items-center justify-center overflow-hidden">
-                        <img 
-                            src="/MTP_IGP-02_Negativo.png" 
-                            alt="Logo" 
-                            className="h-full w-auto object-contain"
-                        />
+                        <img src="/MTP_IGP-02_Negativo.png" alt="Logo" className="h-full w-auto object-contain" />
                     </div>
                     <span className="text-sm font-light tracking-[0.2em] uppercase text-white">Monotropo</span>
                 </div>
@@ -69,6 +70,18 @@ export default async function DashboardLayout({
                     <NavLink href="/prospects" label="Prospectos" icon="users" />
                     <NavLink href="/activities" label="Agenda y Alertas" icon="calendar" />
 
+                    {/* Proyectos */}
+                    {projects && projects.length > 0 && (
+                        <>
+                            <div className="pt-6 pb-2 px-3">
+                                <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/30">Proyectos</p>
+                            </div>
+                            {projects.map(project => (
+                                <NavLink key={project.id} href={`/projects/${project.id}`} label={project.name} icon="building" />
+                            ))}
+                        </>
+                    )}
+
                     {isManager && (
                         <>
                             <div className="pt-6 pb-2 px-3">
@@ -78,6 +91,7 @@ export default async function DashboardLayout({
                             {isSuperAdmin && <NavLink href="/settings/payment-schemas" label="Esquemas de Pago" icon="creditcard" />}
                             {isSuperAdmin && <NavLink href="/settings/teams" label="Equipos" icon="team" />}
                             {isSuperAdmin && <NavLink href="/settings/users" label="Usuarios" icon="user" />}
+                            {isSuperAdmin && <NavLink href="/settings/projects" label="Gestionar Proyectos" icon="folder" />}
                         </>
                     )}
                 </nav>
@@ -85,10 +99,8 @@ export default async function DashboardLayout({
                 {/* Sign Out */}
                 <div className="border-t border-white/10 p-4">
                     <form action={signOut}>
-                        <button
-                            type="submit"
-                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[10px] uppercase tracking-widest font-medium text-white/50 hover:bg-white/5 hover:text-white transition-all"
-                        >
+                        <button type="submit"
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-[10px] uppercase tracking-widest font-medium text-white/50 hover:bg-white/5 hover:text-white transition-all">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" x2="9" y1="12" y2="12" /></svg>
                             Cerrar Sesión
                         </button>
@@ -96,7 +108,6 @@ export default async function DashboardLayout({
                 </div>
             </aside>
 
-            {/* ── Page Content ─────────────────────────────────────────────── */}
             <main className="ml-64 flex-1 p-8 overflow-x-hidden bg-black">
                 {children}
             </main>
@@ -106,10 +117,8 @@ export default async function DashboardLayout({
 
 function NavLink({ href, label, icon }: { href: string; label: string; icon: string }) {
     return (
-        <Link
-            href={href}
-            className="flex items-center gap-3 rounded-lg px-3 py-2 text-[11px] uppercase tracking-widest font-medium text-white/60 hover:bg-white/5 hover:text-white border border-transparent hover:border-white/10 transition-all"
-        >
+        <Link href={href}
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-[11px] uppercase tracking-widest font-medium text-white/60 hover:bg-white/5 hover:text-white border border-transparent hover:border-white/10 transition-all">
             <NavIcon name={icon} />
             {label}
         </Link>
@@ -131,6 +140,8 @@ function NavIcon({ name }: { name: string }) {
             return <svg xmlns="http://www.w3.org/2000/svg" className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="5" rx="2" /><line x1="2" x2="22" y1="10" y2="10" /></svg>
         case 'team':
             return <svg xmlns="http://www.w3.org/2000/svg" className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 2v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+        case 'folder':
+            return <svg xmlns="http://www.w3.org/2000/svg" className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
         case 'user':
         default:
             return <svg xmlns="http://www.w3.org/2000/svg" className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" /></svg>
